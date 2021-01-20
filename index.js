@@ -1,15 +1,18 @@
 var app = new Vue({
     el: '#app',
-    delimiters: ['{-', '-}'],
     data: {
         rightArrow: null,
         rightWeb: null,
         goto: null,
         uri: null,
         photo: null,
+        zoom: '2',
+        sary: '/PANO16DEF.jpg',
+        rootSary: '/PANO16DEF.jpg',
         // dots: [],
         // arrows: [],
         dotSize: 2,
+        size: 0.4,
         popUp: false,
         popUpEdit: false,
         playing: false,
@@ -25,12 +28,23 @@ var app = new Vue({
         size: 1.5,
         idx: -1,
         url: null,
-        sceneIDX: 0,
+        sceneIDX: -1,
         image: null,
         modalTitle: '',
         modalContent: '',
         mode: 0,
-        scenes: [],
+        scenes: [
+            {
+                name: 'Scene 1',
+                coordinates: null,
+                id: '1',
+                attributes: {
+                    img: '/PANO16DEF.jpg'
+                },
+                entities: [
+                ]
+            }
+        ],
         uploadPercentage: 0,
         maxUploadPercentage: 100,
         isUpload: false,
@@ -42,86 +56,86 @@ var app = new Vue({
             return this.scenes[this.sceneIDX] || {}
         },
         options () {
-            return this.scenes.map(scene => ({ text: scene.name, value: scene.aId}))
-        },
-        productOptions () {
-            return products.map(product => ({ text: product.title, value: product}))
-        },
-        sky() {
-            return this.scene && this.scene.attributes ? this.scene.attributes.img : null;
-        },
-        collection () {
-            return this.scenes.filter(scene => scene.attributes.collection !== undefined && (scene.attributes.collection !== null && scene.attributes.collection.length > 0))
-        },
-        scenesCollection () {
-            return this.collection.map(scene => ({ text: scene.attributes.collection, value: scene.aId}));
-        },
+            return this.scenes.map(scene => ({ text: scene.name, value: scene.id}))
+        }
     },
     async mounted () {
-        this.scenes = await this.load();
-        this.sceneIDX = 0;
-        this.initOneScene();
+        let a = await this.load()
+        if(a && a.length) {
+            this.scenes = a;
+            this.sceneIDX = 0
+            this.initOneScene();
+        } else {
+            this.scene.IDX = 0
+        }
+        console.log('aaaa', a)
     },
     watch: {
         sceneIDX () {
+            // this.initOneScene();
         }
     },
     methods: {
-        uuid() {
-            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-                return v.toString(16);
-            });
-        },
         initOneScene () {
-            if (this.scene) {
-                this.origin = this.scene.coordinates && !isNaN(this.scene.coordinates.x) ?
+            if(this.scene) {
+                if (this.scene.attributes && this.scene.attributes.img) {
+                    this.sary = this.scene.attributes.img
+                }
+                this.origin = this.scene.coordinates && !isNaN(this.scene.coordinates.x) ? 
                     `${this.scene.coordinates.x} ${this.scene.coordinates.y} ${this.scene.coordinates.z}`
-                    : this.defaultOrigin;
-                console.log(this.origin);
-                this.$forceUpdate()
+                    : this.defaultOrigin
             }
+            this.$forceUpdate()
         },
         async load(){
-            return await this.$axios.get(loadUri, {
+            let response = await this.$axios.get(loadUri, {
                 onDownloadProgress: ( progressEvent ) => {
                     this.uploadPercentage = parseInt( Math.round( ( progressEvent.loaded / progressEvent.total ) * 100 ))
                 }
-            });
+            })
+            return response
         },
         async save(){
-            await this.$axios.post(saveUri, JSON.stringify({scenes: this.scenes}), {
+            let response = await this.$axios.post(saveUri, {scenes: this.scenes}, {
                 onDownloadProgress: ( progressEvent ) => {
                     this.uploadPercentage = parseInt( Math.round( ( progressEvent.loaded / progressEvent.total ) * 100 ))
-                },
-                headers: {
-                    'content-type': 'application/json',
                 }
-            });
+            })
+            alert('Sauvegarde effectuée')
+            console.log('res', response)
         },
-        async uploadPhoto(file){
-            let uri = uploadUri;
+        async uploadPhoto(data){
+            let uri = `/adminapi/v1/photos/upload`;
             let formData = new FormData();
-            formData.append('file', file);
-            return await this.$axios.post(uri, formData, {
+            for(const field in data){
+                formData.append(field, data[field]);
+            }
+            console.log(formData.entries(), data)
+            let response = await this.$axios.post(uri, formData, {
                 onUploadProgress: ( progressEvent ) => {
                     this.uploadPercentage = parseInt( Math.round( ( progressEvent.loaded / progressEvent.total ) * 100 ))
                 }
-            });
+            })
+            return response
         },
         setView () {
-            var coo = this.$refs.asky.object3D.getWorldQuaternion();
-            console.log(this.scene, coo);
+            // var coo = this.$refs.cam.object3D.getWorldPosition()
+            // var coo = this.$refs.cur.object3D.getWorldPosition()
+            // var coo = this.$refs.cam.object3D.getWorldQuaternion()
+            // var coo = this.$refs.cam.object3D.position
+            var coo = this.$refs.asky.object3D.getWorldQuaternion()
+            console.log(coo)
             this.scene.coordinates = { x: parseFloat(coo._x).toFixed(2), y: parseFloat(coo._y).toFixed(2), z: parseFloat(coo._z).toFixed(2) }
+            // this.scene.coordinates = { x: coo.x, y: coo.y, z: coo.z }
         },
         del (idx) {
             this.scene.entities.splice(idx, 1)
         },
         addScene () {
+            let newId = this.scenes[this.scenes.length - 1] ? (+this.scenes[this.scenes.length - 1].id + 1) : this.scenes.length;
             this.scenes = [...this.scenes, {
-                name: 'New scene',
-                id: null,
-                aId: this.uuid(),
+                name: 'Scene ' + newId,
+                id: newId,
                 coordinates: null,
                 attributes: {
                     img: null
@@ -136,9 +150,10 @@ var app = new Vue({
         gotoScene (idx) {
             this.sceneIDX = idx;
             this.initOneScene();
-            this.$forceUpdate();
+            this.$forceUpdate()
         },
         zoom (posZ) {
+            console.log({posZ})
             return 25*posZ//posZ
         },
         close (en) {
@@ -146,8 +161,9 @@ var app = new Vue({
             this.$forceUpdate()
         },
         params (type, idx) {
-            if (this.mode === 1) {
-                if (type === 'web') {
+            console.log('click', idx)
+            if (this.mode == 1) {
+                if (type == 'web') {
                     this.modal = true
                     if (this.scene.entities[idx] && this.scene.entities[idx].attributes && this.scene.entities[idx].attributes.url) {
                         this.url = this.scene.entities[idx].attributes.url
@@ -155,10 +171,11 @@ var app = new Vue({
                         this.url = null
                     }
                 } else {
-                    if (this.scene.entities[idx] && this.scene.entities[idx].attributes.goto) {
+                    if (this.scene.entities[idx] && this.scene.entities[idx].goto > 0) {
                         for (let i=0;i<this.scenes.length;i++) {
-                            if (this.scenes[i].aId === this.scene.entities[idx].attributes.goto) {
-                                this.gotoScene(i);
+                            if (+this.scenes[i].id == +this.scene.entities[idx].goto) {
+                                // this.gotoScene(this.scene.entities[idx].goto)
+                                this.gotoScene(i)
                                 break;
                             }
                         }
@@ -168,6 +185,7 @@ var app = new Vue({
                 this.rightWeb = this.rightArrow = false
                 this.idx = idx;
                 for(let i=0;i<this.scene.entities.length;i++) {
+                    console.log(i, i == idx)
                     this.scene.entities[i].params = i == idx
                 }
                 this.$forceUpdate()
@@ -182,9 +200,9 @@ var app = new Vue({
             pos.x = pos.x * d
             pos.y = pos.y * d
             if (type === 'web') {
-                this.scene.entities.push({aId: this.uuid(), lookAt: '[camera]', type, coordinates: {x: pos.x, y: pos.y, z: pos.z}, rotation: {x: rot.x, y: rot.y, z: rot.z}, attributes: {}})
+                this.scene.entities.push({lookAt: '[camera]', type, coordinates: {x: pos.x, y: pos.y, z: pos.z}, rotation: {x: rot.x, y: rot.y, z: rot.z}})
             } else if (type === 'arrow') {
-                this.scene.entities.push({aId: this.uuid(), lookAt: '[camera]', type, coordinates: {x: pos.x, y: pos.y, z: pos.z}, rotation: {x: rot.x, y: rot.y, z: rot.z}, attributes: {}})
+                this.scene.entities.push({lookAt: '[camera]', type, coordinates: {x: pos.x, y: pos.y, z: pos.z}, rotation: {x: rot.x, y: rot.y, z: rot.z}})
             }
             var i = this.scene.entities.length - 1;
             setTimeout(x => {
@@ -198,17 +216,19 @@ var app = new Vue({
             }, 1)
         },
         async handleFile (file) {
-            this.isUpload = true;
-            let res = await this.uploadPhoto(file).catch(e => this.isUpload = false);
-            if (res.url) {
-                this.scene.attributes.img = res.url
+            this.isUpload = true
+            let res = await this.uploadPhoto({ photo_file: file, photo_name: 'home' }).catch(e => this.isUpload = false)
+            console.log(res)
+            if (res.photo_uri) {
+                this.sary = `${this.$axios.defaults.baseURL}/uploads/photos/img/${res.photo_uri}`
+                this.scene.attributes.img = this.sary
             } else {
             }
             this.isUpload = false
         },
         showModal(title, content) {
-            this.modalTitle = title || 'Alert';
-            this.modalContent = content || "Une erreur s'est produite";
+            this.modalTitle = title || 'Alert'
+            this.modalContent = content || "Une erreur s'est produite"
             this.$refs['my-modal'].show()
         },
         hideModal() {
@@ -216,3 +236,4 @@ var app = new Vue({
         }
     }
 });
+    
